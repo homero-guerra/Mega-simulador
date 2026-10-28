@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador Mega</title>
+    <style>
+        body {
+            background-color: #0e1117;
+            color: white;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 800px;
+            width: 100%;
+        }
+        .linha-bolinhas {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 15px;
+            margin-top: 20px;
+        }
+        .bola {
+            display: inline-block;
+            width: 45px;
+            height: 45px;
+            line-height: 45px;
+            border-radius: 50%;
+            text-align: center;
+            font-weight: bold;
+            font-size: 20px;
+            color: black;
+            margin: 4px;
+        }
+        .amarela { background-color: #fce803; }
+        .cinza { background-color: #333333; color: white; }
+        .label { 
+            font-size: 20px; 
+            font-weight: bold; 
+            color: #a0a0a0; 
+            margin-right: 15px;
+        }
+        .card-container { 
+            display: flex; 
+            flex-wrap: wrap; 
+            justify-content: center; 
+            gap: 15px; 
+            margin-top: 20px; 
+        }
+        .card {
+            background-color: #222222;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 15px 0;
+            flex: 1 1 28%;
+            min-width: 100px;
+            text-align: center;
+        }
+        .card h1 { margin: 0; font-size: 42px; color: white; }
+        .card p { margin: 0; color: #888; font-weight: bold; font-size: 18px; }
+        .linha-amarela { border-top: 4px solid #fce803; margin: 30px 0 20px 0; }
+        button {
+            background-color: #fce803;
+            color: black;
+            font-weight: bold;
+            font-size: 16px;
+            padding: 10px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            margin-bottom: 20px;
+            transition: background-color 0.2s;
+        }
+        button:hover { background-color: #e5d102; }
+        button:disabled { background-color: #777; cursor: not-allowed; }
+        .explicacao-box {
+            background-color: #111;
+            border: 1px solid #333;
+            border-radius: 10px;
+            padding: 25px;
+            margin-top: 30px;
+            color: #ccc;
+        }
+        .explicacao-box h3 { color: white; margin-top: 0; margin-bottom: 20px; text-align: center;}
+        .explicacao-box li { margin-bottom: 12px; line-height: 1.5; }
+        .sena-box {
+            background-color: rgba(252, 232, 3, 0.1);
+            border: 2px solid #fce803;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+            text-align: center;
+        }
+        .historico-item {
+            background-color: #111;
+            border: 1px solid #333;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .text-center { text-align: center; }
+        .status-msg { color: #fce803; font-weight: bold; text-align: center; margin-bottom: 20px; font-size: 18px;}
+        
+        @media (max-width: 600px) {
+            .bola { width: 35px; height: 35px; line-height: 35px; font-size: 16px; margin: 2px; }
+            .label { width: 100%; text-align: center; margin-right: 0; margin-bottom: 8px; }
+            .card { flex: 1 1 100%; min-width: 100%; }
+            .card h1 { font-size: 32px; }
+            button { width: 100%; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <button id="btnSimular">Nova Simulação</button>
+        <div id="statusArea" class="status-msg"></div>
+        <div id="appContent"></div>
+    </div>
+
+    <script>
+        // Lógica do Web Worker encapsulada em Blob (Garante que a UI não congele durante os 50 milhões de loops)
+        const workerCode = `
+            self.onmessage = function(e) {
+                const sorteio = e.data.sorteio;
+                const iterations = 50063861;
+                
+                let acertos = {4: 0, 5: 0, 6: 0};
+                let exemploJogo = [];
+                let exemploIdx = 0;
+                let senasEncontradas = [];
+
+                // Otimização: Mapa de bits simplificado para busca instantânea na memória
+                let targetMap = new Uint8Array(61);
+                for(let i = 0; i < 6; i++) targetMap[sorteio[i]] = 1;
+
+                let pool = new Uint8Array(60);
+                for(let i = 0; i < 60; i++) pool[i] = i + 1;
+
+                for(let i = 1; i < iterations; i++) {
+                    let hits = 0;
+                    let currentDraw = [];
+                    
+                    // Sorteio ultra-rápido usando Fisher-Yates parcial
+                    for(let j = 0; j < 6; j++) {
+                        let rand = j + Math.floor(Math.random() * (60 - j));
+                        let temp = pool[rand];
+                        pool[rand] = pool[j];
+                        pool[j] = temp;
+                        
+                        currentDraw.push(temp);
+                        if(targetMap[temp]) hits++;
+                    }
+
+                    if(hits >= 4) {
+                        acertos[hits]++;
+                        if(hits === 4) {
+                            exemploJogo = currentDraw.slice().sort((a,b)=>a-b);
+                            exemploIdx = i;
+                        } else if(hits === 6) {
+                            senasEncontradas.push({
+                                jogo: currentDraw.slice().sort((a,b)=>a-b),
+                                idx: i
+                            });
+                        }
+                    }
+                }
+
+                self.postMessage({
+                    sorteio: sorteio,
+                    quadras: acertos[4],
+                    quinas: acertos[5],
+                    senas: acertos[6],
+                    exemplo_jogo: exemploJogo,
+                    exemplo_idx: exemploIdx,
+                    senas_encontradas: senasEncontradas
+                });
+            };
+        `;
+
+        const blob = new Blob([workerCode], {type: 'application/javascript'});
+        const worker = new Worker(URL.createObjectURL(blob));
+
+        const btnSimular = document.getElementById('btnSimular');
+        const statusArea = document.getElementById('statusArea');
+        const appContent = document.getElementById('appContent');
+
+        let historico = JSON.parse(localStorage.getItem('megaHistorico')) || [];
+
+        function getRandom6() {
+            let res = [];
+            let used = new Uint8Array(61);
+            while(res.length < 6) {
+                let r = Math.floor(Math.random() * 60) + 1;
+                if(!used[r]) {
+                    used[r] = 1;
+                    res.push(r);
+                }
+            }
+            return res.sort((a,b) => a-b);
+        }
+
+        function formatarNumero(num) {
+            return num.toString().padStart(2, '0');
+        }
+
+        function formatarMilhar(num) {
+            return num.toLocaleString('pt-BR');
+        }
+
+        function renderBolinhas(numeros, dezenasGabarito, tamanhoPequeno = false) {
+            let html = '';
+            let style = tamanhoPequeno ? 'width: 30px; height: 30px; line-height: 30px; font-size: 14px; margin: 2px;' : '';
+            numeros.forEach(n => {
+                let classe = dezenasGabarito.includes(n) ? 'amarela' : 'cinza';
+                if(tamanhoPequeno) classe = 'amarela'; // Força amarelo no histórico
+                html += `<div class="bola ${classe}" style="${style}">${formatarNumero(n)}</div>`;
+            });
+            return html;
+        }
+
+        function renderizarInterface() {
+            if(historico.length === 0) {
+                appContent.innerHTML = `
+                    <div class="explicacao-box">
+                        <h3>Como ler a Simulação</h3>
+                        <p>Este sistema testa a dificuldade probabilística das loterias ao processar todas as <b>50.063.860</b> combinações possíveis a cada rodada, diretamente no seu navegador.</p>
+                        <ul>
+                            <li><b>Gabarito Simulado:</b> Representa os 6 números gerados pelo sistema como alvo matemático.</li>
+                            <li><b>Exemplo de Quadra:</b> Captura um bilhete de aposta real (gerado durante a simulação) que conseguiu acertar 4 dezenas.</li>
+                            <li><b>Placar (Cartões):</b> Exibe o número exato de bilhetes que acertaram prêmios após o teste de stress completo.</li>
+                        </ul>
+                        <p style='text-align: center; color: #888; margin-top: 25px;'>Clique no botão acima para iniciar o teste.</p>
+                    </div>`;
+                return;
+            }
+
+            const atual = historico[0];
+            let html = '';
+
+            // Gabarito Simulado
+            html += `<div class="linha-bolinhas"><span class="label">Gabarito Simulado</span>${renderBolinhas(atual.sorteio, atual.sorteio)}</div>`;
+
+            // Senas Encontradas
+            if(atual.senas_encontradas && atual.senas_encontradas.length > 0) {
+                html += `<div class="sena-box">
+                            <h2 style="color: #fce803; margin-top: 0;">🎉 SENA ENCONTRADA! 🎉</h2>`;
+                atual.senas_encontradas.forEach(sena => {
+                    html += `<div style="color: white; margin-bottom: 5px; font-size: 18px;">Aposta nº ${formatarMilhar(sena.idx)}</div>
+                             <div class="linha-bolinhas" style="margin-top: 5px;">${renderBolinhas(sena.jogo, atual.sorteio)}</div>`;
+                });
+                html += `</div>`;
+            }
+
+            // Exemplo de Quadra
+            if(atual.exemplo_jogo.length > 0) {
+                html += `<div class="linha-bolinhas"><span class="label">Exemplo de Quadra</span>${renderBolinhas(atual.exemplo_jogo, atual.sorteio)}</div>`;
+            }
+
+            // Cartões
+            html += `
+                <div class="card-container">
+                    <div class="card"><h1>${atual.quadras}</h1><p>quadras</p></div>
+                    <div class="card"><h1>${atual.quinas}</h1><p>quinas</p></div>
+                    <div class="card"><h1>${atual.senas}</h1><p>senas</p></div>
+                </div>
+                <p style='text-align: center; color: #888; margin-top: 15px;'>Tempo de processamento: <b>${atual.tempo_execucao}</b></p>
+                <div class="linha-amarela"></div>
+            `;
+
+            if(atual.exemplo_idx > 0) {
+                html += `<h3 class="text-center">quadra no jogo <span style="color:#fce803;">${formatarMilhar(atual.exemplo_idx)}</span></h3>`;
+            }
+            html += `<h2 class="text-center" style="font-size: 32px;">${atual.quadras} <span style="color:#fce803;">quadras</span></h2>`;
+
+            // Histórico Recente
+            if(historico.length > 1) {
+                html += `<h3 class="text-center" style="color: #a0a0a0; margin-top: 50px; margin-bottom: 20px;">Histórico Recente</h3>`;
+                for(let i = 1; i < historico.length; i++) {
+                    let reg = historico[i];
+                    html += `
+                        <div class="historico-item">
+                            <div style="margin-bottom: 10px; display: flex; flex-wrap: wrap; justify-content: center;">
+                                ${renderBolinhas(reg.sorteio, reg.sorteio, true)}
+                            </div>
+                            <div style="font-size: 14px;">
+                                <span style="color: #888;">Quadras:</span> <b style="color: white;">${reg.quadras}</b> &nbsp;|&nbsp; 
+                                <span style="color: #888;">Quinas:</span> <b style="color: white;">${reg.quinas}</b> &nbsp;|&nbsp; 
+                                <span style="color: ${reg.senas > 0 ? '#fce803' : '#888'};">Senas:</span> <b style="color: white;">${reg.senas}</b>
+                            </div>
+                        </div>`;
+                }
+            }
+
+            appContent.innerHTML = html;
+        }
+
+        btnSimular.addEventListener('click', () => {
+            btnSimular.disabled = true;
+            btnSimular.innerText = "Processando...";
+            statusArea.innerText = "Processando 50.063.860 simulações. Isto levará alguns instantes...";
+            
+            const sorteioAlvo = getRandom6();
+            const startTime = performance.now();
+            
+            // Envia o alvo para a thread secundária em background
+            worker.postMessage({ sorteio: sorteioAlvo });
+
+            worker.onmessage = function(e) {
+                const endTime = performance.now();
+                const tempoTotalSegundos = (endTime - startTime) / 1000;
+                const minutos = Math.floor(tempoTotalSegundos / 60);
+                const segundos = Math.floor(tempoTotalSegundos % 60);
+                
+                let tempoStr = minutos > 0 ? `${minutos} minuto(s) e ${segundos} segundo(s)` : `${segundos} segundo(s)`;
+                
+                let novoResultado = e.data;
+                novoResultado.tempo_execucao = tempoStr;
+
+                historico.unshift(novoResultado);
+                if(historico.length > 6) historico.pop();
+                
+                // Armazenamento local persistente sem banco de dados
+                localStorage.setItem('megaHistorico', JSON.stringify(historico));
+
+                btnSimular.disabled = false;
+                btnSimular.innerText = "Nova Simulação";
+                statusArea.innerText = "";
+                
+                renderizarInterface();
+            };
+        });
+
+        // Carrega a interface imediatamente ao abrir o arquivo
+        renderizarInterface();
+    </script>
+</body>
+</html>
